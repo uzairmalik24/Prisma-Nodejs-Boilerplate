@@ -1,6 +1,6 @@
-# 🚀 Full Stack Authentication Boilerplate
+# 🚀 Full Stack Prisma/Nodejs + PostgreSQL Boilerplate
 
-A production-ready Node.js + Express + Prisma + React boilerplate with cookie-based JWT authentication, universal pagination, and clean architecture.
+A production-ready Node.js + Express + Prisma boilerplate with cookie-based JWT authentication, universal pagination, and clean architecture.
 
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-blue.svg)](https://expressjs.com/)
