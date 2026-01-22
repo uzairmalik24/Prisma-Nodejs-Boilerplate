@@ -10,6 +10,7 @@ const app = express();
 import routes from '../src/routes/index.js';
 import { authenticateToken } from './middlewares/auth.middleware.js';
 import { errorHandler } from './middlewares/globalHandler.middleware.js';
+import rateLimiter from './middlewares/rateLimiter.middleware.js';
 
 const allowedOrigins = [
     'http://localhost:5173',
@@ -48,6 +49,8 @@ app.use('/api', routes);
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'Server is healthy!' });
 });
+
+app.use(rateLimiter(100, { windowMs: 15 * 60 * 1000 }));
 
 app.use(errorHandler);
 
