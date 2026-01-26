@@ -4,12 +4,43 @@ import { generateAccessToken, generateRefreshToken, setAuthCookies, clearAuthCoo
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { successResponse, errorResponse, createdResponse, notFoundResponse, unauthorizedResponse } from "../services/response.service.js";
 import { paginate, buildSearchWhere, getPaginationParams } from "../services/pagination.service.js";
+import redis from "../config/redis.js";
+
+const invalidateUserCaches = async (userId = null) => {
+    const patterns = [
+        'users:search=*',
+        'users:list:*'
+    ];
+
+    if (userId) {
+        patterns.push(`users:id:${userId}`);
+        patterns.push(`users:current:${userId}`);
+    }
+
+    for (const pattern of patterns) {
+        const keys = await redis.keys(pattern);
+        if (keys.length > 0) {
+            await redis.del(keys);
+        }
+    }
+};
 
 export default {
 
     getUsers: asyncHandler(async (req, res) => {
-        const { search } = req.query;
+        const { search = '' } = req.query;
         const paginationParams = getPaginationParams(req.query);
+
+        const cacheKey = `users:search=${search}:page=${paginationParams.page}:limit=${paginationParams.limit}`;
+
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            return successResponse(
+                res,
+                'Users fetched successfully (from cache)',
+                JSON.parse(cachedData)
+            );
+        }
 
         const where = buildSearchWhere(['name', 'email'], search);
 
@@ -27,11 +58,23 @@ export default {
             ...paginationParams
         });
 
+        await redis.setEx(cacheKey, 300, JSON.stringify(result));
+
         return successResponse(res, 'Users fetched successfully', result);
     }),
 
     getById: asyncHandler(async (req, res) => {
         const { id } = req.params;
+        const cacheKey = `users:id:${id}`;
+
+        const cachedUser = await redis.get(cacheKey);
+        if (cachedUser) {
+            return successResponse(
+                res,
+                'User fetched successfully (from cache)',
+                JSON.parse(cachedUser)
+            );
+        }
 
         const user = await prisma.user.findUnique({
             where: {
@@ -49,6 +92,8 @@ export default {
         if (!user) {
             return notFoundResponse(res, 'User not found');
         }
+
+        await redis.setEx(cacheKey, 600, JSON.stringify(user));
 
         return successResponse(res, 'User fetched successfully', user);
     }),
@@ -99,6 +144,8 @@ export default {
 
         setAuthCookies(res, accessToken, refreshToken);
 
+        await invalidateUserCaches();
+
         return createdResponse(res, 'User registered successfully', user);
     }),
 
@@ -143,6 +190,16 @@ export default {
 
     getCurrentUser: asyncHandler(async (req, res) => {
         const userId = req.user.id;
+        const cacheKey = `users:current:${userId}`;
+
+        const cachedUser = await redis.get(cacheKey);
+        if (cachedUser) {
+            return successResponse(
+                res,
+                'User fetched successfully (from cache)',
+                JSON.parse(cachedUser)
+            );
+        }
 
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -158,6 +215,8 @@ export default {
         if (!user) {
             return notFoundResponse(res, 'User not found');
         }
+
+        await redis.setEx(cacheKey, 600, JSON.stringify(user));
 
         return successResponse(res, 'User fetched successfully', user);
     }),

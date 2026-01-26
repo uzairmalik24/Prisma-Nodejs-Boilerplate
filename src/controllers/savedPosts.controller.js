@@ -6,6 +6,32 @@ import {
     notFoundResponse
 } from "../services/response.service.js";
 import { paginate, getPaginationParams } from "../services/pagination.service.js";
+import redis from "../config/redis.js";
+
+const invalidateSavedPostsCaches = async (userId = null, postId = null) => {
+    const patterns = [
+        'savedPosts:user:*',
+        'savedPosts:my:*'
+    ];
+
+    if (userId) {
+        patterns.push(`savedPosts:user:${userId}:*`);
+        patterns.push(`savedPosts:my:${userId}:*`);
+    }
+
+    if (postId) {
+        await redis.del(`posts:id:${postId}`);
+        patterns.push('posts:search=*');
+        patterns.push('posts:stats:*');
+    }
+
+    for (const pattern of patterns) {
+        const keys = await redis.keys(pattern);
+        if (keys.length > 0) {
+            await redis.del(keys);
+        }
+    }
+};
 
 export default {
 
@@ -48,12 +74,25 @@ export default {
             }
         });
 
+        await invalidateSavedPostsCaches(userId, postId);
+
         return successResponse(res, 'Post saved successfully', savedPost);
     }),
 
     getSavedPostsByUser: asyncHandler(async (req, res) => {
         const { userId } = req.params;
         const paginationParams = getPaginationParams(req.query);
+
+        const cacheKey = `savedPosts:user:${userId}:page=${paginationParams.page}:limit=${paginationParams.limit}`;
+
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            return successResponse(
+                res,
+                'Saved posts fetched successfully (from cache)',
+                JSON.parse(cachedData)
+            );
+        }
 
         const result = await paginate({
             model: 'savedPosts',
@@ -77,12 +116,25 @@ export default {
             ...paginationParams
         });
 
+        await redis.setEx(cacheKey, 300, JSON.stringify(result));
+
         return successResponse(res, 'Saved posts fetched successfully', result);
     }),
 
     getMySavedPosts: asyncHandler(async (req, res) => {
         const userId = req.user.id;
         const paginationParams = getPaginationParams(req.query);
+
+        const cacheKey = `savedPosts:my:${userId}:page=${paginationParams.page}:limit=${paginationParams.limit}`;
+
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            return successResponse(
+                res,
+                'Your saved posts fetched successfully (from cache)',
+                JSON.parse(cachedData)
+            );
+        }
 
         const result = await paginate({
             model: 'savedPosts',
@@ -105,6 +157,8 @@ export default {
             orderBy: { createdAt: 'desc' },
             ...paginationParams
         });
+
+        await redis.setEx(cacheKey, 300, JSON.stringify(result));
 
         return successResponse(res, 'Your saved posts fetched successfully', result);
     }),
@@ -132,6 +186,8 @@ export default {
                 id: Number(id)
             }
         });
+
+        await invalidateSavedPostsCaches(userId, existingSavedPost.postId);
 
         return successResponse(res, 'Saved post removed successfully', deletedSavedPost);
     })

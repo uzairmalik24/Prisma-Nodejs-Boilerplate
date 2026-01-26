@@ -46,7 +46,6 @@ const authenticateToken = async (req, res, next) => {
         const decoded = verifyAccessToken(accessToken);
         
         if (decoded) {
-            console.log('Access token valid for user:', decoded.id);
             req.user = decoded;
             return next();
         }
